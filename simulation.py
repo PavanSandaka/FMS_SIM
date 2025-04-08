@@ -6,8 +6,6 @@
 
 """
 
-
-
 import pygame
 import sys
 import pickle
@@ -135,6 +133,8 @@ def move_robot(robot):
                 robot['index'] += 1
             else:
                 robot['pos'] = (current + step)
+                
+        # here if distance is less than threshold we can send request to server
                 
 def save_simulation():
     data = {

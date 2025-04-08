@@ -1,14 +1,16 @@
 
 # Robot class
 class Robot:
-    def __init__(self, name, priority, battery_lvl = 100):
+    def __init__(self, name, battery_lvl = 100):
         self.name = name
+        self.battery_lvl = battery_lvl
+        
         self.current_pose = None
-        self.priority = priority
-        self.battery_level = battery_lvl
         self.full_path = None
         self.remaining_path = None
         self.current_node = None
+        
+        self.task_priority = None
         
         self.robot_speed = 2 # m/s
         self.total_load = None  # Total weight the robot is carrying
@@ -21,7 +23,18 @@ class Robot:
         if self.current_step < len(self.path):
             print(f"[{self.name}] Moving to node {self.path[self.current_step]}")
             self.current_step += 1
-            
+    
+    def handle_path(self, path):
+        self.full_path = path
+        self.path = path
+        self.current_node = self.path[0]
+        
+    def update_battery_level(self, lvl):
+        self.battery_lvl = lvl
+        
+    def update_priority(self, priority):
+        self.task_priority = priority 
+          
     def raise_request(self):    
         pass
         

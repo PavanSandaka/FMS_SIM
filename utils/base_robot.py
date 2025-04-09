@@ -6,6 +6,7 @@ class Robot:
         self.battery_lvl = battery_lvl
         
         self.current_pose = None
+        self.waiting = False
         
         self.full_path = None
         self.remaining_path = None

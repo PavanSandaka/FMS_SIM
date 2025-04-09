@@ -11,6 +11,7 @@ import sys
 import pickle
 from utils.base_robot import Robot
 from utils.conflict_handler import ConflictDetector, ConflictResolver, Decision
+import time
 
 # Constants
 WIDTH, HEIGHT = 1000, 700
@@ -134,27 +135,45 @@ def make_decision(current_robot, robots):
     
 
 def move_robot(robot):
-    current = pygame.Vector2(robot.current_pose)
+    # If robot has no path or has reached final destination, nothing to do
+    if not robot.full_path or robot.current_node == robot.full_path[-1]:
+        return
+    
+    if robot.current_pose == nodes[robot.full_path[0]] and make_decision(robot, robots) != Decision.FORWARD.value:
+        return
+    
+    current = pygame.Vector2(robot.current_pose)        
     target = pygame.Vector2(nodes[robot.next_node])
     direction = (target - current)
-    distance = direction.length()
-
-    if distance != 0:
-        direction = direction.normalize()
-        step = direction * SPEED
-
-        if distance <= SPEED:
-            #here wait for decision
-            if make_decision(robot, robots) == Decision.FORWARD.value:
-                robot.current_pose = target
-                robot.move_forward()
-            else:
-                # simply wait
-                pass
-                
+    distance = direction.length()      
+        
+    # Check if robot is at a node (either exactly or very close)
+    if distance < 1 and robot.current_pose!=nodes[robot.full_path[0]]:  # If we're basically at the node (within 1 pixel)
+        # We've reached the node, update position to be exactly at the node
+        robot.current_pose = nodes[robot.next_node]
+        print("distance: ", distance)
+        # Make decision before advancing to next node
+        decision = make_decision(robot, robots)
+                    
+        if decision == Decision.FORWARD.value:
+            # Update robot's node tracking and prepare for next movement
+            robot.move_forward()
+            robot.waiting = False
+            print(f"robot {robot.name} full path: {robot.full_path}")
+            print(f"robot {robot.name} remaining path: {robot.remaining_path}")
+            print(f"current node: {robot.current_node}, next node: {robot.next_node}")
+            
         else:
-            robot.current_pose = (current + step)
-                
+            # Robot must wait at this node
+            robot.waiting = True
+    else:
+        # Robot is between nodes and should continue moving if not waiting
+        if not robot.waiting:
+            direction = direction.normalize()
+            step = direction * SPEED
+            robot.current_pose = (current + step)    
+            
+            # time.sleep(0.25) 
                 
 def save_simulation():
     data = {
@@ -222,6 +241,23 @@ while running:
                 print("Cleared all data and reset simulation.")
             elif event.key == pygame.K_v:
                 save_simulation()
+            elif event.key == pygame.K_r:
+                # Reset simulation without clearing data
+                simulating = False
+        
+                # Reset all robots to their starting positions
+                for robot in robots:
+                    if robot.full_path:
+                        robot.current_node = robot.full_path[0]
+                        if len(robot.full_path) > 1:
+                            robot.next_node = robot.full_path[1]
+                        else:
+                            robot.next_node = None
+                        robot.current_pose = nodes[robot.current_node]
+                        robot.waiting = False
+                        robot.remaining_path = robot.full_path.copy()
+        
+                print("Simulation restarted - robots reset to starting positions.")
             elif pygame.K_1 <= event.key <= pygame.K_9:
                 robot_index = event.key - pygame.K_1
                 if robot_index < len(robots):

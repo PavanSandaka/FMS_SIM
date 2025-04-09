@@ -2,13 +2,15 @@
 """
     Description
 
-    Simulation setup for two robots
+    Simulation setup
 
 """
 
 import pygame
 import sys
 import pickle
+from utils.base_robot import Robot
+from utils.conflict_handler import ConflictDetector, ConflictResolver, Decision
 
 # Constants
 WIDTH, HEIGHT = 1000, 700
@@ -17,6 +19,18 @@ ROBOT_RADIUS = 8
 FPS = 60
 SPEED = 2
 GRID_SIZE = 40
+
+ROBOT_COLORS = [
+    (255, 0, 0),      # Red
+    (0, 255, 0),      # Green
+    (0, 0, 255),      # Blue
+    (255, 165, 0),    # Orange
+    (255, 0, 255),    # Magenta
+    (0, 255, 255),    # Cyan
+    (128, 0, 128),    # Purple
+    (128, 128, 0),    # Olive
+    (0, 128, 128)     # Teal
+]
 
 # Colors
 WHITE = (255, 255, 255)
@@ -39,15 +53,19 @@ mode = "SHELF"
 
 # Data storage
 shelves = []
-nodes = []
-paths = []
-robot_a = {'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': [], 'index': 0}
-robot_b = {'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': [], 'index': 0}
+nodes = {}   # {1: (x, y), 2: (x, y), ...}
+# robot_a = {'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': [], 'index': 0}
+# robot_b = {'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': [], 'index': 0}
+robot_a = Robot(name="R1")
+robot_b = Robot(name="R2")
+
+robots = [robot_a, robot_b]
+
+node_counter = 1      # Auto-increment node name
 
 placing_shelf = False
 shelf_start = None
 
-path_temp = []
 robot_path_temp = []
 current_robot_editing = None
 robot_set_stage = 0
@@ -68,36 +86,25 @@ def draw():
     for rect in shelves:
         pygame.draw.rect(screen, GREY, rect)
 
-    # Draw paths
-    for start, end in paths:
-        pygame.draw.line(screen, BLACK, start, end, 2)
-
     # Draw nodes
-    for node in nodes:
-        pygame.draw.circle(screen, BLUE, node, NODE_RADIUS)
+    for node, node_pose in nodes.items():
+        pygame.draw.circle(screen, BLUE, node_pose, NODE_RADIUS)
 
-    # Draw robot paths
-    if len(robot_a['full_path']) > 1:
-        pygame.draw.lines(screen, RED, False, robot_a['full_path'], 2)
-    if len(robot_b['full_path']) > 1:
-        pygame.draw.lines(screen, GREEN, False, robot_b['full_path'], 2)
+    for i, robot in enumerate(robots):
+        color = robot_colors[i]
+        
+        # Draw robot paths
+        if robot.full_path:
+            path_points = [nodes[i] for i in robot.full_path]
+            
+            pygame.draw.lines(screen, color, False, path_points, 2)
+            
+            pygame.draw.circle(screen, color, path_points[0], ROBOT_RADIUS, 2)
+            pygame.draw.circle(screen, color, path_points[-1], ROBOT_RADIUS, 2)
 
-    if robot_a['pos']:
-        pygame.draw.circle(screen, RED, (int(robot_a['pos'][0]), int(robot_a['pos'][1])), ROBOT_RADIUS)
-    if robot_b['pos']:
-        pygame.draw.circle(screen, GREEN, (int(robot_b['pos'][0]), int(robot_b['pos'][1])), ROBOT_RADIUS)
 
-    # Draw robot A start/goal
-    if robot_a['start']:
-        pygame.draw.circle(screen, RED, robot_a['start'], ROBOT_RADIUS, 2)
-    if robot_a['goal']:
-        pygame.draw.circle(screen, RED, robot_a['goal'], ROBOT_RADIUS, 2)
-
-    # Draw robot B start/goal
-    if robot_b['start']:
-        pygame.draw.circle(screen, GREEN, robot_b['start'], ROBOT_RADIUS, 2)
-    if robot_b['goal']:
-        pygame.draw.circle(screen, GREEN, robot_b['goal'], ROBOT_RADIUS, 2)
+        if robot.current_pose:
+            pygame.draw.circle(screen, color, (int(robot.current_pose[0]), int(robot.current_pose[1])), ROBOT_RADIUS)
 
 
     # Draw current mode
@@ -111,53 +118,76 @@ def snap_to_grid(pos):
     y = round(pos[1] / GRID_SIZE) * GRID_SIZE
     return (x, y)
 
+
 def get_nearest_node(pos):
-    for node in nodes:
-        if pygame.Rect(node[0] - 10, node[1] - 10, 20, 20).collidepoint(pos):
-            return node
+    for node_id, node_pos in nodes.items():
+        if pygame.Rect(node_pos[0] - 10, node_pos[1] - 10, 20, 20).collidepoint(pos):
+            return node_id
     return None
 
+def make_decision(current_robot, robots):
+    # Find conflicts and make decision
+    conflicts = conflict_detector.find_conflicts(current_robot, robots)
+    decision = conflict_resolver.handle_conflicts(conflicts, current_robot)
+        
+    return decision
+    
+
 def move_robot(robot):
-    if robot['index'] < len(robot['full_path']) - 1:
-        current = pygame.Vector2(robot['pos'])
-        target = pygame.Vector2(robot['full_path'][robot['index'] + 1])
-        direction = (target - current)
-        distance = direction.length()
+    current = pygame.Vector2(robot.current_pose)
+    target = pygame.Vector2(nodes[robot.next_node])
+    direction = (target - current)
+    distance = direction.length()
 
-        if distance != 0:
-            direction = direction.normalize()
-            step = direction * SPEED
+    if distance != 0:
+        direction = direction.normalize()
+        step = direction * SPEED
 
-            if distance <= SPEED:
-                robot['pos'] = target
-                robot['index'] += 1
+        if distance <= SPEED:
+            #here wait for decision
+            if make_decision(robot, robots) == Decision.FORWARD.value:
+                robot.current_pose = target
+                robot.move_forward()
             else:
-                robot['pos'] = (current + step)
+                # simply wait
+                pass
                 
-        # here if distance is less than threshold we can send request to server
+        else:
+            robot.current_pose = (current + step)
+                
                 
 def save_simulation():
     data = {
         'shelves': shelves,
         'nodes': nodes,
-        'paths': paths,
-        'robot_a': robot_a,
-        'robot_b': robot_b
+        'robots': robots
     }
     with open('simulation_data.pkl', 'wb') as f:
         pickle.dump(data, f)
     print("Simulation data saved.")
     
+priority_array = [5, 6]
+battery_lvl_array = [50, 50]
+
+num_robots = int(input("Enter the number of robots: "))
+robots = [Robot(name=f"R{i+1}") for i in range(num_robots)]
+robot_colors = {i: ROBOT_COLORS[i % len(ROBOT_COLORS)] for i in range(len(robots))}
+
+for i, robot in enumerate(robots):
+    robot.update_priority(priority_array[i])
+    robot.update_battery_level(battery_lvl_array[i])
+    
+conflict_detector = ConflictDetector()
+conflict_resolver = ConflictResolver()
 
 running = True
 while running:
     clock.tick(FPS)
 
-    if simulating:
-        if len(robot_a['full_path']) > 1:
-            move_robot(robot_a)
-        if len(robot_b['full_path']) > 1:
-            move_robot(robot_b)
+    if simulating:            
+        for robot in robots:
+            if robot.next_node:
+                move_robot(robot)
 
     draw()
 
@@ -170,45 +200,21 @@ while running:
                 mode = "SHELF"
             elif event.key == pygame.K_n:
                 mode = "NODE"
-            elif event.key == pygame.K_p:
-                mode = "PATH"
-            elif event.key == pygame.K_r:
-                mode = "ROBOT"
-            elif event.key == pygame.K_a:
-                mode = "ROBOT_PATH_A"
-                current_robot_editing = robot_a
-                robot_path_temp = []
-            elif event.key == pygame.K_b:
-                mode = "ROBOT_PATH_B"
-                current_robot_editing = robot_b
-                robot_path_temp = []
             elif event.key == pygame.K_RETURN:
                 if current_robot_editing and len(robot_path_temp) > 1:
-                    current_robot_editing['full_path'] = robot_path_temp[:]
-                    current_robot_editing['start'] = robot_path_temp[0]
-                    current_robot_editing['goal'] = robot_path_temp[-1]
-                    current_robot_editing['pos'] = robot_path_temp[0]
-                    current_robot_editing['path'] = robot_path_temp[:]
+                    current_robot_editing.handle_path(robot_path_temp)
+                    current_robot_editing.current_pose = nodes[robot_path_temp[0]]
                     robot_path_temp = []
                     current_robot_editing = None
-                    mode = "ROBOT"
+                    mode = "SHELF"
             elif event.key == pygame.K_SPACE:
                 simulating = True
-                if robot_a['start']:
-                    robot_a['pos'] = robot_a['start']
-                    robot_a['path'] = robot_a['full_path'][:]
-                if robot_b['start']:
-                    robot_b['pos'] = robot_b['start']
-                    robot_b['path'] = robot_b['full_path'][:]
-                print("robot a path: ", robot_a['full_path'])
-                print("robot b path: ", robot_b['full_path'])
             elif event.key == pygame.K_c:
                 shelves.clear()
                 nodes.clear()
-                paths.clear()
-                robot_a.update({'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': []})
-                robot_b.update({'start': None, 'goal': None, 'path': [], 'pos': None, 'full_path': []})
-                path_temp.clear()
+                for robot in robots:
+                    robot.reset_robot()
+
                 robot_path_temp.clear()
                 simulating = False
                 placing_shelf = False
@@ -216,7 +222,12 @@ while running:
                 print("Cleared all data and reset simulation.")
             elif event.key == pygame.K_v:
                 save_simulation()
-
+            elif pygame.K_1 <= event.key <= pygame.K_9:
+                robot_index = event.key - pygame.K_1
+                if robot_index < len(robots):
+                    current_robot_editing = robots[robot_index]
+                    mode = f"ROBOT_PATH_{robot_index + 1}"
+                    robot_path_temp = []
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             raw_pos = pygame.mouse.get_pos()
@@ -233,39 +244,14 @@ while running:
                     placing_shelf = False
 
             elif mode == "NODE":
-                nodes.append(pos)
+                nodes[node_counter] = pos
+                node_counter+=1
 
-            elif mode == "PATH":
-                nearest = get_nearest_node(pos)
-                if nearest:
-                    path_temp.append(nearest)
-                    if len(path_temp) == 2:
-                        paths.append((path_temp[0], path_temp[1]))
-                        path_temp = []
-                            
-            elif mode == "ROBOT":
-                nearest = get_nearest_node(pos)
-                if nearest:
-                    if event.button == 1:  # Left click → Robot A
-                        if robot_a['start'] is None:
-                            robot_a['start'] = nearest
-                            print("Robot A start set to", nearest)
-                        elif robot_a['goal'] is None:
-                            robot_a['goal'] = nearest
-                            print("Robot A goal set to", nearest)
-                    elif event.button == 3:  # Right click → Robot B
-                        if robot_b['start'] is None:
-                            robot_b['start'] = nearest
-                            print("Robot B start set to", nearest)
-                        elif robot_b['goal'] is None:
-                            robot_b['goal'] = nearest
-                            print("Robot B goal set to", nearest)
-
-            elif mode in ["ROBOT_PATH_A", "ROBOT_PATH_B"]:
+            elif "ROBOT_PATH" in mode:
                 nearest = get_nearest_node(pos)
                 if nearest and nearest not in robot_path_temp:
                     robot_path_temp.append(nearest)
-                    print("point added to path ", nearest)
+                    # print("point added to path ", nearest)
 
 pygame.quit()
 sys.exit()

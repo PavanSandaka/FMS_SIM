@@ -9,7 +9,6 @@ class Robot:
         
         self.full_path = None
         self.remaining_path = None
-        self.conflict_detection_path = None
         
         self.current_node = None
         self.next_node = None
@@ -19,14 +18,6 @@ class Robot:
         self.robot_speed = 2 # m/s
         self.total_load = None  # Total weight the robot is carrying
         self.total_items = None # Total no.of items robot is carrying
-
-    def move(self):
-        if self.stop_time is not None:
-            print(f"[{self.name}] Waiting due to stop command until t={self.stop_time}")
-            return
-        if self.current_step < len(self.path):
-            print(f"[{self.name}] Moving to node {self.path[self.current_step]}")
-            self.current_step += 1
     
     def handle_path(self, path):
         self.full_path = path.copy()  # Create a copy for full_path
@@ -42,21 +33,17 @@ class Robot:
         
     def move_forward(self):
         self.current_node = self.remaining_path.pop(0)
-        if len(self.remaining_path)>1:
+        if len(self.remaining_path)>0:
             self.next_node = self.remaining_path[0]
         else:
             self.next_node = None
           
+    def reset_robot(self):
+        self.full_path = None
+        self.remaining_path = None
+        self.current_node = None
+        self.next_node = None
+        self.current_pose = None
+        
     def raise_request(self):    
         pass
-        
-        
-
-# Sample setup
-# robots = [
-#     Robot(name="R1", path=[1, 2, 3, 4], priority=2),
-#     Robot(name="R2", path=[4, 3, 2, 1], priority=1),
-#     Robot(name="R3", path=[1, 5, 6], priority=3),
-# ]
-
-

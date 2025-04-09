@@ -15,22 +15,7 @@ class RobotPathManager:
         self.robots = robots
         self.conflict_detector = ConflictDetector()
         self.conflict_resolver = ConflictResolver()
-    
-    def update_robot_path(self, robot_name: str, path: List[Any]) -> None:
-        """
-        Update a robot's path.
         
-        Args:
-            robot_name: Name of the robot
-            path: New path for the robot
-        """
-        for robot in self.robots:
-            if robot.name == robot_name:
-                robot.handle_path(path)
-                return
-        
-        raise ValueError(f"Robot '{robot_name}' not found")
-    
     def make_decision(self, robot_name: str) -> str:
         """
         Make a movement decision for a robot.

@@ -11,7 +11,6 @@ import sys
 import pickle
 from utils.base_robot import Robot
 from utils.conflict_handler import ConflictDetector, ConflictResolver, Decision
-import time
 
 # Constants
 WIDTH, HEIGHT = 1000, 700
@@ -135,45 +134,21 @@ def make_decision(current_robot, robots):
     
 
 def move_robot(robot):
-    # If robot has no path or has reached final destination, nothing to do
-    if not robot.full_path or robot.current_node == robot.full_path[-1]:
-        return
-    
-    if robot.current_pose == nodes[robot.full_path[0]] and make_decision(robot, robots) != Decision.FORWARD.value:
-        return
-    
-    current = pygame.Vector2(robot.current_pose)        
+    current = pygame.Vector2(robot.current_pose)
     target = pygame.Vector2(nodes[robot.next_node])
     direction = (target - current)
-    distance = direction.length()      
-        
-    # Check if robot is at a node (either exactly or very close)
-    if distance < 1 and robot.current_pose!=nodes[robot.full_path[0]]:  # If we're basically at the node (within 1 pixel)
-        # We've reached the node, update position to be exactly at the node
-        robot.current_pose = nodes[robot.next_node]
-        print("distance: ", distance)
-        # Make decision before advancing to next node
-        decision = make_decision(robot, robots)
-                    
-        if decision == Decision.FORWARD.value:
-            # Update robot's node tracking and prepare for next movement
-            robot.move_forward()
-            robot.waiting = False
-            print(f"robot {robot.name} full path: {robot.full_path}")
-            print(f"robot {robot.name} remaining path: {robot.remaining_path}")
-            print(f"current node: {robot.current_node}, next node: {robot.next_node}")
-            
+    distance = direction.length()
+
+    if distance != 0:
+        direction = direction.normalize()
+        step = direction * SPEED
+
+        if distance <= SPEED:
+            robot.move_forward()    
+            robot.current_pose = nodes[robot.current_node]            
         else:
-            # Robot must wait at this node
-            robot.waiting = True
-    else:
-        # Robot is between nodes and should continue moving if not waiting
-        if not robot.waiting:
-            direction = direction.normalize()
-            step = direction * SPEED
-            robot.current_pose = (current + step)    
-            
-            # time.sleep(0.25) 
+            robot.current_pose = (current + step)
+                
                 
 def save_simulation():
     data = {
@@ -206,7 +181,15 @@ while running:
     if simulating:            
         for robot in robots:
             if robot.next_node:
+                # first make decision and based on that move the robot
+                if robot.current_pose == nodes[robot.current_node]:
+                    decision = make_decision(robot, robots)
+                    if decision != Decision.FORWARD.value:
+                        robot.waiting = True
+                        continue
+                    
                 move_robot(robot)
+                robot.waiting = False
 
     draw()
 

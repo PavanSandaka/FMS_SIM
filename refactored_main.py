@@ -332,6 +332,15 @@ class ConflictResolver:
             conflict_points = conflict["conflict_points"]
             conflict_type = conflict["conflict_type"]
             
+            # TO DO 
+            # here we can check if the conflict_points are still in the remaining points, if not we can delete those points from the conflict_detection_points
+            # we have to check both the robots and update them            
+            if not (set(conflict_points) & set(robot.remaining_path) & set(other_robot.remaining_path)):
+                print("----No Intersection-------")
+                print(f"conflict points: {conflict_points}")
+                print("***can skip this conflict***\n")
+                continue
+                
             # Handle NODE conflict
             if conflict_type == ConflictType.NODE:
                 # Check if robots are heading to the same next node
@@ -518,11 +527,11 @@ def run_simulation():
     robot2.handle_path(path2)
     
     # Set priorities and battery levels
-    robot1.update_priority(5)
+    robot1.update_priority(4)
     robot2.update_priority(6)
     
     robot1.update_battery_level(50)
-    robot2.update_battery_level(50)
+    robot2.update_battery_level(25)
     
     # Create manager
     manager = RobotPathManager([robot1, robot2])
@@ -542,7 +551,7 @@ def run_simulation():
             if robot.remaining_path:
                 print(f"{robot.name} next node: {robot.next_node}")
             print(f"{robot.name} remaining path: {robot.remaining_path}")
-            print(f"{robot.name} full path: {robot.full_path}")
+            # print(f"{robot.name} full path: {robot.full_path}")
 
         
         # Check if simulation is complete

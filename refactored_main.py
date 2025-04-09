@@ -31,15 +31,15 @@ class ConflictDetector:
         Returns:
             List of aisles (lists of connected points)
         """
-        common_points = set(robot1.remaining_path) & set(robot2.remaining_path)
+        common_points = set(robot1.full_path) & set(robot2.full_path)
         
         # No common points, no aisles
         if not common_points:
             return []
         
         # Get indices of common points in both paths
-        r1_indices = {point: idx for idx, point in enumerate(robot1.remaining_path) if point in common_points}
-        r2_indices = {point: idx for idx, point in enumerate(robot2.remaining_path) if point in common_points}
+        r1_indices = {point: idx for idx, point in enumerate(robot1.full_path) if point in common_points}
+        r2_indices = {point: idx for idx, point in enumerate(robot2.full_path) if point in common_points}
         
         # Group common points into connected aisles
         aisles = []
@@ -77,6 +77,41 @@ class ConflictDetector:
         return aisles
     
     @staticmethod
+    def is_next_move_into_conflict(robot: Robot, conflict_points: List[Any]) -> bool:
+        """
+        Check if the robot's next move will lead it into a conflict zone.
+        
+        Args:
+            robot: The robot to check
+            conflict_points: Points in the conflict zone
+            
+        Returns:
+            True if next move is into conflict, False otherwise
+        """
+        if not robot.remaining_path:
+            return False
+        
+        # Check if the next node is in the conflict points
+        return robot.next_node in conflict_points
+    
+    @staticmethod
+    def steps_to_conflict(robot: Robot, conflict_points: List[Any]) -> int:
+        """
+        Calculate how many steps until the robot reaches the conflict zone.
+        
+        Args:
+            robot: The robot to check
+            conflict_points: Points in the conflict zone
+            
+        Returns:
+            Number of steps to reach conflict (-1 if no conflict)
+        """
+        for idx, point in enumerate(robot.full_path):
+            if point in conflict_points:
+                return idx
+        return -1
+    
+    @staticmethod
     def find_conflicts(robot: Robot, robots: List[Robot]) -> List[Dict]:
         """
         Find all conflicts between the given robot and all other robots.
@@ -86,7 +121,7 @@ class ConflictDetector:
             robots: List of all robots in the system
             
         Returns:
-            List of conflict dictionaries
+            List of conflict dictionaries with immediate relevance flag
         """
         conflicts = []
         
@@ -100,18 +135,32 @@ class ConflictDetector:
             aisles = ConflictDetector.find_connected_aisles(robot, other_robot)
             
             print(f"Found {len(aisles)} aisles between {robot.name} and {other_robot.name}")
-            print(f"Aisles: {aisles}")
             
             if aisles:
                 for aisle in aisles:
                     # Classify as single node or aisle
                     conflict_type = ConflictType.NODE if len(aisle) == 1 else ConflictType.AISLE
                     
+                    # Check if the next move leads to this conflict
+                    is_immediate = ConflictDetector.is_next_move_into_conflict(robot, aisle)
+                    steps_to_conflict = ConflictDetector.steps_to_conflict(robot, aisle)
+                    
+                    # Check if other robot is also heading to this conflict
+                    other_steps = ConflictDetector.steps_to_conflict(other_robot, aisle)
+                    other_heading_to_conflict = other_steps >= 0
+                    
+                    # Only consider conflicts if both robots are heading toward the same aisle
+                    if not other_heading_to_conflict:
+                        continue
+                    
                     conflicts.append({
                         "robot": other_robot.name,
                         "robot_obj": other_robot,
                         "conflict_points": aisle,
-                        "conflict_type": conflict_type
+                        "conflict_type": conflict_type,
+                        "is_immediate": is_immediate,
+                        "steps_to_conflict": steps_to_conflict,
+                        "other_steps_to_conflict": other_steps
                     })
         
         return conflicts
@@ -154,7 +203,7 @@ class ConflictResolver:
             
         for point in aisle_points:
             try:
-                index = robot.remaining_path.index(point)
+                index = robot.full_path.index(point)
                 if index < entry_index:
                     entry_index = index
                     entry_point = point
@@ -230,10 +279,10 @@ class ConflictResolver:
         other_battery = other_robot.battery_lvl
         
         # Calculate distance to goal
-        robot_distance_to_goal = len(robot.remaining_path) - robot_entry_index if robot_entry_index != float('inf') else 0
-        other_distance_to_goal = len(other_robot.remaining_path) - other_entry_index if other_entry_index != float('inf') else 0
+        robot_distance_to_goal = len(robot.full_path) - robot_entry_index if robot_entry_index != float('inf') else 0
+        other_distance_to_goal = len(other_robot.full_path) - other_entry_index if other_entry_index != float('inf') else 0
         
-        # Convert proximity to a score where lower is better
+        # Convert proximity to a score where closer is better
         robot_proximity_score = 1/(robot_entry_index+1) if robot_entry_index != float('inf') else 0
         other_proximity_score = 1/(other_entry_index+1) if other_entry_index != float('inf') else 0
         
@@ -268,9 +317,16 @@ class ConflictResolver:
         if not conflicts:
             return Decision.FORWARD.value  # No conflicts, robot can proceed
             
+        # Filter to only immediate conflicts - where next move leads into conflict
+        immediate_conflicts = [c for c in conflicts if c["is_immediate"]]
+        
+        # If there are no immediate conflicts, the robot can proceed
+        if not immediate_conflicts:
+            return Decision.FORWARD.value
+            
         aisle_decisions = []
             
-        for conflict in conflicts:
+        for conflict in immediate_conflicts:
             other_robot_name = conflict["robot"]
             other_robot = conflict["robot_obj"]
             conflict_points = conflict["conflict_points"]
@@ -298,10 +354,18 @@ class ConflictResolver:
                 }
                 
                 # Make decision based on scores
-                if robot_score >= other_score:
+                if robot_score > other_score:
                     aisle_decisions.append((Decision.FORWARD.value, aisle_info))
-                else:
+                elif robot_score < other_score:
                     aisle_decisions.append((Decision.WAIT.value, aisle_info))
+                else:
+                    # Scores are equal, use name-based tie-breaker
+                    if robot.name < other_robot.name:
+                        print(f"Tie resolved: {robot.name} gets priority over {other_robot.name}")
+                        aisle_decisions.append((Decision.FORWARD.value, aisle_info))
+                    else:
+                        print(f"Tie resolved: {other_robot.name} gets priority over {robot.name}")
+                        aisle_decisions.append((Decision.WAIT.value, aisle_info))
                 
                 continue
             
@@ -328,12 +392,20 @@ class ConflictResolver:
             }
             
             # Make decision based on scores
-            if robot_score >= other_score:
+            if robot_score > other_score:
                 aisle_decisions.append((Decision.FORWARD.value, aisle_info))
-            else:
+            elif robot_score < other_score:
                 aisle_decisions.append((Decision.WAIT.value, aisle_info))
+            else:
+                # Scores are equal, use name-based tie-breaker
+                if robot.name < other_robot.name:
+                    print(f"Tie resolved: {robot.name} gets priority over {other_robot.name}")
+                    aisle_decisions.append((Decision.FORWARD.value, aisle_info))
+                else:
+                    print(f"Tie resolved: {other_robot.name} gets priority over {robot.name}")
+                    aisle_decisions.append((Decision.WAIT.value, aisle_info))
         
-        print(f"Decisions: {aisle_decisions}")
+        print(f"Decisions for immediate conflicts: {aisle_decisions}")
         
         # Compile results - WAIT if any conflict requires waiting
         final_decision = Decision.FORWARD.value if all(d[0] == Decision.FORWARD.value for d in aisle_decisions) else Decision.WAIT.value
@@ -408,6 +480,11 @@ class RobotPathManager:
         
         # First, make decisions for all robots
         for robot in self.robots:
+            if not robot.remaining_path:
+                decisions[robot.name] = "DESTINATION_REACHED"
+                movements[robot.name] = False
+                continue
+                
             decision = self.make_decision(robot.name)
             decisions[robot.name] = decision
             movements[robot.name] = False
@@ -431,11 +508,9 @@ def run_simulation():
     robot2 = Robot(name="R2")
     
     # Set up paths
-    # Case1 - Common Node at same time
-    # path1 = [4, 5, 12, 13, 14, 9, 8, 7]
+    # path1 = [3, 4, 5, 12, 13, 14, 9, 8, 7]
     # path2 = [10, 11, 12, 15, 16, 17, 18, 19]
     
-    # Case 2 - Common aisle
     path1 = [1, 2, 3, 4, 5, 12, 15, 16, 17, 18, 19]
     path2 = [10, 11, 12, 5, 4, 3, 6, 7]
     
@@ -464,7 +539,11 @@ def run_simulation():
         # Print status
         for robot in [robot1, robot2]:
             print(f"{robot.name} at node {robot.current_node}, decision: {decisions.get(robot.name, 'N/A')}")
+            if robot.remaining_path:
+                print(f"{robot.name} next node: {robot.next_node}")
             print(f"{robot.name} remaining path: {robot.remaining_path}")
+            print(f"{robot.name} full path: {robot.full_path}")
+
         
         # Check if simulation is complete
         if len(robot1.remaining_path) == 0 and len(robot2.remaining_path) == 0:

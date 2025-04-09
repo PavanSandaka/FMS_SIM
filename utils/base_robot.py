@@ -6,8 +6,10 @@ class Robot:
         self.battery_lvl = battery_lvl
         
         self.current_pose = None
+        
         self.full_path = None
         self.remaining_path = None
+        self.conflict_detection_path = None
         
         self.current_node = None
         self.next_node = None
@@ -27,10 +29,10 @@ class Robot:
             self.current_step += 1
     
     def handle_path(self, path):
-        self.full_path = path
-        self.remaining_path = path
+        self.full_path = path.copy()  # Create a copy for full_path
+        self.remaining_path = path.copy()  # Create another copy for remaining_path
         self.current_node = self.remaining_path.pop(0)
-        self.next_node = self.remaining_path[0]
+        self.next_node = self.remaining_path[0] if self.remaining_path else None
         
     def update_battery_level(self, lvl):
         self.battery_lvl = lvl

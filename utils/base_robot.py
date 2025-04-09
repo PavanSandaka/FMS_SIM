@@ -8,7 +8,9 @@ class Robot:
         self.current_pose = None
         self.full_path = None
         self.remaining_path = None
+        
         self.current_node = None
+        self.next_node = None
         
         self.task_priority = None
         
@@ -26,14 +28,22 @@ class Robot:
     
     def handle_path(self, path):
         self.full_path = path
-        self.path = path
-        self.current_node = self.path[0]
+        self.remaining_path = path
+        self.current_node = self.remaining_path.pop(0)
+        self.next_node = self.remaining_path[0]
         
     def update_battery_level(self, lvl):
         self.battery_lvl = lvl
         
     def update_priority(self, priority):
         self.task_priority = priority 
+        
+    def move_forward(self):
+        self.current_node = self.remaining_path.pop(0)
+        if len(self.remaining_path)>1:
+            self.next_node = self.remaining_path[0]
+        else:
+            self.next_node = None
           
     def raise_request(self):    
         pass

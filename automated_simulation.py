@@ -195,8 +195,8 @@ def draw():
         # Draw the robot itself
         if robot.current_pose:
             pygame.draw.circle(screen, color, (int(robot.current_pose[0]), int(robot.current_pose[1])), ROBOT_RADIUS)
-            robot_text = font.render(robot.name, True, BLACK)
-            screen.blit(robot_text, (int(robot.current_pose[0]) - 10, int(robot.current_pose[1]) - 25))
+            robot_text = font.render(f"{robot.name} {'' if not robot.waiting else '(W)'}", True, BLACK)
+            screen.blit(robot_text, (int(robot.current_pose[0]) - 15, int(robot.current_pose[1]) - 25))
 
     # Display simulation stats
     stats_text = font.render(f"Robots: {len(robots)} | Simulation Running", True, BLACK)
@@ -308,7 +308,7 @@ while running:
         draw()
     except Exception as e:
         print(f"Error in draw: {e}")
-        time.sleep(5)
+        time.sleep(1)
 
 pygame.quit()
 sys.exit()

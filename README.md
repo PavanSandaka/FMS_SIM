@@ -63,6 +63,7 @@ This project simulates multiple robots navigating through a warehouse environmen
 
 ## TODO
 
+- Resolve the bug in simulation, the robot is getting stuck when it has to go to the top left corner node.
 - Reroute the robot if two robots are stuck for same conflict.
 
 ## Next Steps

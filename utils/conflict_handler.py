@@ -498,6 +498,40 @@ class ConflictResolver:
             robot_entry_index, robot_entry_point = self.find_entry_point_to_aisle(robot, conflict_points)
             other_entry_index, other_entry_point = self.find_entry_point_to_aisle(other_robot, conflict_points)
             
+            if conflict_type == ConflictType.AISLE and direction == Direction.SAME:
+                print(f"Same direction aisle conflict with {other_robot_name}")
+    
+                # Check if robots would collide
+                if robot.next_node == other_robot.current_node:
+                    # Would move to the same node as other robot - must wait
+                    print(f"Would collide with {other_robot_name}, must wait")
+                    return Decision.WAIT.value
+        
+                # If both robots are targeting the same next node, resolve based on priority
+                if robot.next_node == other_robot.next_node:
+                    # Calculate scores to determine priority
+                    robot_score, other_score = self.calculate_node_conflict_scores(robot, other_robot)
+        
+                    if robot_score <= other_score:
+                        print(f"{other_robot_name} has higher priority for same next node")
+                        return Decision.WAIT.value
+                    else:
+                        print(f"{robot.name} has higher priority, can proceed")
+                        # Continue checking other conflicts
+    
+                # If no immediate collision risk, allow robots to follow each other in the aisle
+                print(f"Same direction, can safely proceed through aisle")
+                # Continue checking other conflicts by creating a FORWARD decision
+                aisle_info = {
+                    "aisle_points": conflict_points,
+                    "aisle_type": conflict_type.value,
+                    "entry_point": robot_entry_point,
+                    "other_robot": other_robot_name,
+                    "direction": direction.value
+                }
+                aisle_decisions.append((Decision.FORWARD.value, aisle_info))
+                continue  # Skip the standard aisle conflict resolution below
+                        
             # Calculate scores for AISLE conflict, considering direction
             robot_score, other_score = self.calculate_aisle_conflict_scores(
                 robot, other_robot, robot_entry_index, other_entry_index, direction

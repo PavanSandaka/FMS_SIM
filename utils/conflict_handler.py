@@ -9,6 +9,13 @@ class ConflictType(Enum):
     AISLE = "AISLE"
 
 
+class Direction(Enum):
+    """Enum to represent direction of travel through an aisle."""
+    SAME = "SAME"
+    OPPOSITE = "OPPOSITE"
+    UNKNOWN = "UNKNOWN"
+
+
 class Decision(Enum):
     """Enum to represent possible decisions."""
     FORWARD = "FORWARD"
@@ -111,6 +118,72 @@ class ConflictDetector:
         return -1
     
     @staticmethod
+    def determine_aisle_direction(
+        robot: Robot, 
+        other_robot: Robot, 
+        aisle_points: List[Any]
+    ) -> Direction:
+        """
+        Determine if robots are traveling in the same or opposite directions through the aisle.
+        
+        Args:
+            robot: First robot
+            other_robot: Second robot
+            aisle_points: Points in the aisle
+            
+        Returns:
+            Direction enum indicating if robots are traveling in the same or opposite direction
+        """
+        if len(aisle_points) < 2:
+            return Direction.UNKNOWN  # Can't determine direction for single-point aisles
+        
+        # Find first and last point each robot encounters in the aisle
+        robot_aisle_indices = [i for i, p in enumerate(robot.full_path) if p in aisle_points]
+        other_aisle_indices = [i for i, p in enumerate(other_robot.full_path) if p in aisle_points]
+        
+        if not robot_aisle_indices or not other_aisle_indices:
+            return Direction.UNKNOWN
+        
+        robot_first_point = robot.full_path[min(robot_aisle_indices)]
+        robot_last_point = robot.full_path[max(robot_aisle_indices)]
+        
+        other_first_point = other_robot.full_path[min(other_aisle_indices)]
+        other_last_point = other_robot.full_path[max(other_aisle_indices)]
+        
+        # If first/last points are the same for both robots but in opposite order, they're traveling in opposite directions
+        if robot_first_point == other_last_point and robot_last_point == other_first_point:
+            return Direction.OPPOSITE
+        
+        # Get aisle points in sequence for each robot
+        robot_aisle_path = [robot.full_path[i] for i in sorted(robot_aisle_indices)]
+        other_aisle_path = [other_robot.full_path[i] for i in sorted(other_aisle_indices)]
+        
+        # Check if the sequences are the same or reverse of each other
+        if robot_aisle_path == other_aisle_path:
+            return Direction.SAME
+        elif robot_aisle_path == list(reversed(other_aisle_path)):
+            return Direction.OPPOSITE
+        
+        # If can't clearly determine, check first and last points positions in the aisle
+        aisle_sequence = list(aisle_points)
+        try:
+            robot_first_idx = aisle_sequence.index(robot_first_point)
+            robot_last_idx = aisle_sequence.index(robot_last_point)
+            other_first_idx = aisle_sequence.index(other_first_point)
+            other_last_idx = aisle_sequence.index(other_last_point)
+            
+            # If slope of indices is the same, they're moving in the same direction
+            robot_direction = robot_last_idx - robot_first_idx
+            other_direction = other_last_idx - other_first_idx
+            
+            if (robot_direction * other_direction) > 0:  # Same sign means same direction
+                return Direction.SAME
+            else:
+                return Direction.OPPOSITE
+        except ValueError:
+            return Direction.UNKNOWN
+    
+    @staticmethod
     def find_conflicts(robot: Robot, robots: List[Robot]) -> List[Dict]:
         """
         Find all conflicts between the given robot and all other robots.
@@ -141,7 +214,8 @@ class ConflictDetector:
                     "is_immediate": True,
                     "steps_to_conflict": 0,
                     "other_steps_to_conflict": 0,
-                    "node_occupied": True  # Flag to indicate node is currently occupied
+                    "node_occupied": True,  # Flag to indicate node is currently occupied
+                    "direction": Direction.UNKNOWN  # Direction doesn't matter for occupied nodes
                 })
                 
             # Find connected aisles that are common in both paths
@@ -166,6 +240,11 @@ class ConflictDetector:
                     if not other_heading_to_conflict:
                         continue
                     
+                    # Determine direction of travel
+                    direction = Direction.UNKNOWN
+                    if conflict_type == ConflictType.AISLE:
+                        direction = ConflictDetector.determine_aisle_direction(robot, other_robot, aisle)
+                    
                     conflicts.append({
                         "robot": other_robot.name,
                         "robot_obj": other_robot,
@@ -174,7 +253,8 @@ class ConflictDetector:
                         "is_immediate": is_immediate,
                         "steps_to_conflict": steps_to_conflict,
                         "other_steps_to_conflict": other_steps,
-                        "node_occupied": False
+                        "node_occupied": False,
+                        "direction": direction
                     })
         
         return conflicts
@@ -271,20 +351,35 @@ class ConflictResolver:
         robot: Robot, 
         other_robot: Robot,
         robot_entry_index: int,
-        other_entry_index: int
+        other_entry_index: int,
+        direction: Direction
     ) -> Tuple[float, float]:
         """
-        Calculate scores for aisle conflict resolution.
+        Calculate scores for aisle conflict resolution, considering direction of travel.
         
         Args:
             robot: First robot
             other_robot: Second robot
             robot_entry_index: Entry index for first robot
             other_entry_index: Entry index for second robot
+            direction: Direction of travel through aisle
             
         Returns:
             Tuple of (robot_score, other_score)
         """
+        # If robots are moving in the same direction, prioritize the closer one
+        if direction == Direction.SAME:
+            # Simple comparison of entry indices - lower is better
+            if robot_entry_index < other_entry_index:
+                print(f"Same direction conflict: {robot.name} is closer to aisle than {other_robot.name}")
+                return 1.0, 0.0  # First robot gets priority
+            elif robot_entry_index > other_entry_index:
+                print(f"Same direction conflict: {other_robot.name} is closer to aisle than {robot.name}")
+                return 0.0, 1.0  # Second robot gets priority
+            else:
+                print(f"Same direction conflict but equal distance - falling back to normal scoring")
+                # Fall back to normal scoring if they're equidistant
+        
         # Extract scoring factors
         robot_priority = robot.task_priority
         other_priority = other_robot.task_priority
@@ -351,10 +446,9 @@ class ConflictResolver:
             other_robot = conflict["robot_obj"]
             conflict_points = conflict["conflict_points"]
             conflict_type = conflict["conflict_type"]
+            direction = conflict.get("direction", Direction.UNKNOWN)
             
-            # TO DO 
-            # here we can check if the conflict_points are still in the remaining points, if not we can delete those points from the conflict_detection_points
-            # we have to check both the robots and update them            
+            # Check if the conflict points are still in the remaining paths
             if not (set(conflict_points) & set(robot.remaining_path) & set(other_robot.remaining_path)):
                 print("----No Intersection-------")
                 print(f"conflict points: {conflict_points}")
@@ -379,7 +473,8 @@ class ConflictResolver:
                     "aisle_type": conflict_type.value,
                     "robot_score": robot_score,
                     "other_score": other_score,
-                    "other_robot": other_robot_name
+                    "other_robot": other_robot_name,
+                    "direction": direction.value if direction else Direction.UNKNOWN.value
                 }
                 
                 # Make decision based on scores
@@ -403,12 +498,12 @@ class ConflictResolver:
             robot_entry_index, robot_entry_point = self.find_entry_point_to_aisle(robot, conflict_points)
             other_entry_index, other_entry_point = self.find_entry_point_to_aisle(other_robot, conflict_points)
             
-            # Calculate scores for AISLE conflict
+            # Calculate scores for AISLE conflict, considering direction
             robot_score, other_score = self.calculate_aisle_conflict_scores(
-                robot, other_robot, robot_entry_index, other_entry_index
+                robot, other_robot, robot_entry_index, other_entry_index, direction
             )
             
-            print(f"Aisle conflict scores with {other_robot_name}: {robot_score:.4f} vs {other_score:.4f}")
+            print(f"Aisle conflict scores with {other_robot_name} ({direction.value}): {robot_score:.4f} vs {other_score:.4f}")
             
             # Create aisle info
             aisle_info = {
@@ -417,7 +512,8 @@ class ConflictResolver:
                 "entry_point": robot_entry_point,
                 "robot_score": robot_score,
                 "other_score": other_score,
-                "other_robot": other_robot_name
+                "other_robot": other_robot_name,
+                "direction": direction.value if direction else Direction.UNKNOWN.value
             }
             
             # Make decision based on scores

@@ -61,6 +61,10 @@ This project simulates multiple robots navigating through a warehouse environmen
 - `utils/base_robot.py`: Robot class definition
 - `utils/conflict_handler.py`: Conflict detection and resolution logic
 
+## TODO
+
+- Handle case where the current robot's next node is occupied by some other robot.
+
 ## Next Steps
 
 - Test it thoroughly in different cases.

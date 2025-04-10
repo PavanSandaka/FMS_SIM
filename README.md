@@ -63,7 +63,7 @@ This project simulates multiple robots navigating through a warehouse environmen
 
 ## TODO
 
-- Handle case where the current robot's next node is occupied by some other robot.
+- Reroute the robot if two robots are stuck for same conflict.
 
 ## Next Steps
 

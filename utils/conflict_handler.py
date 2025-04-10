@@ -130,6 +130,20 @@ class ConflictDetector:
             if other_robot.name == robot.name:
                 continue
             
+            # Check if robot's next node is the current position of other robot
+            if robot.next_node and robot.next_node == other_robot.current_node:
+                # Immediate collision risk - the node is already occupied
+                conflicts.append({
+                    "robot": other_robot.name,
+                    "robot_obj": other_robot,
+                    "conflict_points": [robot.next_node],
+                    "conflict_type": ConflictType.NODE,
+                    "is_immediate": True,
+                    "steps_to_conflict": 0,
+                    "other_steps_to_conflict": 0,
+                    "node_occupied": True  # Flag to indicate node is currently occupied
+                })
+                
             # Find connected aisles that are common in both paths
             aisles = ConflictDetector.find_connected_aisles(robot, other_robot)
             
@@ -159,7 +173,8 @@ class ConflictDetector:
                         "conflict_type": conflict_type,
                         "is_immediate": is_immediate,
                         "steps_to_conflict": steps_to_conflict,
-                        "other_steps_to_conflict": other_steps
+                        "other_steps_to_conflict": other_steps,
+                        "node_occupied": False
                     })
         
         return conflicts
@@ -322,7 +337,13 @@ class ConflictResolver:
         # If there are no immediate conflicts, the robot can proceed
         if not immediate_conflicts:
             return Decision.FORWARD.value
-            
+        
+        # Check first for occupied nodes - highest priority conflicts
+        occupied_node_conflicts = [c for c in immediate_conflicts if c.get("node_occupied", False)]
+        if occupied_node_conflicts:
+            # Node is occupied, must wait
+            return Decision.WAIT.value
+        
         aisle_decisions = []
             
         for conflict in immediate_conflicts:
